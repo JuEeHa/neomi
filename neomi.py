@@ -136,7 +136,8 @@ class Serve(threading.Thread):
 	
 	def handle_request(self):
 		path, protocol, rest  = get_request(self.sock)
-		self.sock.sendall(str((path, protocol, rest)).encode('utf-8'))
+		answer = str((path, protocol, rest))+'\n'
+		self.sock.sendall(answer.encode('utf-8'))
 	
 	def run(self):
 		global threads_amount, threads_lock
