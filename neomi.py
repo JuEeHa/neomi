@@ -209,7 +209,7 @@ def listen(port):
 			conn, addr = s.accept()
 
 			# Set timeout for socket
-			sock.settimeout(config.socket_timeout)
+			conn.settimeout(config.socket_timeout)
 
 			spawn_thread(conn, addr[0])
 
