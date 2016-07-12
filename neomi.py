@@ -112,7 +112,7 @@ def get_request(sock):
 
 		request += data
 
-		if b'\n' in request: # First line has been sent, all we care about for now
+		if b'\n' in data: # First line has been sent, all we care about for now
 			break
 	
 	request = request.decode('utf-8')
