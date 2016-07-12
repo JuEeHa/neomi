@@ -36,10 +36,12 @@ def bind(port, backlog = 1):
 			s = socket.socket(af, socktype, proto)
 		except OSError:
 			continue
-		try:
-			s.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
-		except OSError:
-			pass
+		# Make IPv6 socket only bind on IPv6 address, otherwise may clash with IPv4 and not get enabled
+		if af == socket.AF_INET6:
+			try:
+				s.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+			except OSError:
+				pass
 		try:
 			s.bind(sa)
 			s.listen(backlog)
