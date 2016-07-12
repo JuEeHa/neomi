@@ -7,9 +7,11 @@ import time
 
 class config: None
 
+config.max_threads = 8192
 config.port = 7777
-config.max_threads = 1024
 config.recognised_selectors = ['0', '1', '5', '9', 'g', 'h', 'I', 's']
+config.request_max_size = 8192
+config.socket_timeout = 1
 
 # error(message)
 # Print error message to stderr
@@ -99,9 +101,14 @@ def extract_selector_path(selector_path):
 def get_request(sock):
 	request = b''
 	while True:
-		data = sock.recv(1024)
+		try:
+			data = sock.recv(1024)
+		except socket.timeout:
+			raise RequestEerror('Remote end timed out')
 		if not data: # Other end hung up before sending a header
 			raise RequestEerror('Remote end hung up unexpectedly')
+		if len(data) >= config.request_max_size:
+			raise RequestEerror('Request too long')
 
 		request += data
 
@@ -200,6 +207,9 @@ def listen(port):
 			s = sock_by_fd[fd]
 			# Accept and handle the connection
 			conn, addr = s.accept()
+
+			# Set timeout for socket
+			sock.settimeout(config.socket_timeout)
 
 			spawn_thread(conn, addr[0])
 
