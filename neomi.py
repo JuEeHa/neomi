@@ -121,7 +121,7 @@ def get_request(sock):
 		first_line = first_line[:-1]
 	first_line = first_line.split(' ')
 	
-	if len(first_line) >= 1 and first_line[0] == 'GET':
+	if len(first_line) >= 2 and first_line[0] == 'GET':
 		selector_path = first_line[1]
 		selector, path = extract_selector_path(selector_path)
 		return path, Protocol.http, selector
