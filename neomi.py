@@ -137,7 +137,7 @@ class Serve(threading.Thread):
 		threading.Thread.__init__(self)
 	
 	def handle_request(self):
-		path, protocol, rest  = get_request(self.sock)
+		path, protocol, rest = get_request(self.sock)
 		answer = str((path, protocol, rest))+'\n'
 		self.sock.sendall(answer.encode('utf-8'))
 	
@@ -185,7 +185,7 @@ def listen(port):
 
 	# Create a poll object for the listening sockets and a fd->socket map
 	listening = select.poll()
-	sock_by_fd={}
+	sock_by_fd = {}
 	for s in listening_sockets:
 		listening.register(s, select.POLLIN)
 		sock_by_fd[s.fileno()] = s
@@ -196,10 +196,10 @@ def listen(port):
 		events = listening.poll()
 		for fd,event in events:
 			assert(event == select.POLLIN)
-			# Get socked from table established previously
+			# Get socket from table established previously
 			s = sock_by_fd[fd]
 			# Accept and handle the connection
-			conn,addr = s.accept()
+			conn, addr = s.accept()
 
 			spawn_thread(conn, addr[0])
 
