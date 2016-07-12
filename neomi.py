@@ -146,8 +146,8 @@ class Serve(threading.Thread):
 
 		try:
 			self.handle_request()
-		#except BaseException as err: # Catch and log exceptions instead of letting to crash, as we need to update the worker thread count on abnormal exit as well
-		#	error('Worker thread died with: %s' % err)
+		except BaseException as err: # Catch and log exceptions instead of letting to crash, as we need to update the worker thread count on abnormal exit as well
+			error('Worker thread died with: %s' % err)
 		finally:
 			self.sock.close()
 			with threads_lock:
