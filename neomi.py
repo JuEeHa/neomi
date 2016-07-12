@@ -70,7 +70,7 @@ def drop_privileges():
 class Protocol:
 	gopher, http = range(2)
 
-class RequestEerror(Exception):
+class RequestError(Exception):
 	def __init__(self, message):
 		self.message = message
 	def __str__(self):
@@ -104,11 +104,11 @@ def get_request(sock):
 		try:
 			data = sock.recv(1024)
 		except socket.timeout:
-			raise RequestEerror('Remote end timed out')
+			raise RequestError('Remote end timed out')
 		if not data: # Other end hung up before sending a header
-			raise RequestEerror('Remote end hung up unexpectedly')
-		if len(data) >= config.request_max_size:
-			raise RequestEerror('Request too long')
+			raise RequestError('Remote end hung up unexpectedly')
+		if len(request) >= config.request_max_size:
+			raise RequestError('Request too long')
 
 		request += data
 
