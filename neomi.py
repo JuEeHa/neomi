@@ -1,3 +1,4 @@
+import enum
 import os
 import select
 import socket
@@ -67,7 +68,7 @@ def drop_privileges():
 	except:
 		die('Unable to drop privileges')
 
-class Protocol:
+class Protocol(enum.Enum):
 	gopher, http = range(2)
 
 class RequestError(Exception):
