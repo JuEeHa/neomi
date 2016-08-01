@@ -6,13 +6,13 @@ import sys
 import threading
 import time
 
-class config: None
+class default_config: None
 
-config.max_threads = 8192
-config.port = 7777
-config.recognised_selectors = ['0', '1', '5', '9', 'g', 'h', 'I', 's']
-config.request_max_size = 8192
-config.socket_timeout = 1
+default_config.max_threads = 8192
+default_config.port = 7777
+default_config.recognised_selectors = ['0', '1', '5', '9', 'g', 'h', 'I', 's']
+default_config.request_max_size = 8192
+default_config.socket_timeout = 1
 
 # error(message)
 # Print error message to stderr
@@ -184,13 +184,13 @@ def spawn_thread(sock, address, config):
 # Spawns worker threads to handle the connections
 def listen(config):
 	# Get sockets that we listen to
-	listening_sockets = bind(port)
+	listening_sockets = bind(config.port)
 	# Drop privileges, we don't need them after this
 	drop_privileges()
 
 	# If we got no sockets to listen to, die
 	if listening_sockets == []:
-		die('Could not bind to port %i' % port)
+		die('Could not bind to port %i' % config.port)
 
 	# Create a poll object for the listening sockets and a fd->socket map
 	listening = select.poll()
@@ -215,4 +215,5 @@ def listen(config):
 
 			spawn_thread(conn, addr[0], config)
 
-listen(config)
+if __name__ == '__main__':
+	listen(default_config)
