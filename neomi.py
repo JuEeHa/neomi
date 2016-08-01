@@ -26,6 +26,13 @@ def die(message, status = 1):
 	error(message)
 	sys.exit(status)
 
+# A base for Exeptions that are used with one argument and that return a string that incorporates said argument
+class OneArgumentException(Exception):
+	def __init__(self, argument):
+		self.argument = argument
+	def __str__(self):
+		return self.text % self.argument
+
 # bind(port, backlog = 1) → [sockets...]
 # Binds to all available (TCP) interfaces on specified port and returns the sockets
 # backlog controls how many connections allowed to wait handling before system drops new ones
@@ -68,15 +75,6 @@ def drop_privileges():
 	except:
 		die('Unable to drop privileges')
 
-class Protocol(enum.Enum):
-	gopher, http = range(2)
-
-class RequestError(Exception):
-	def __init__(self, message):
-		self.message = message
-	def __str__(self):
-		return 'Error with handling request: ' + self.message
-
 # extract_selector_path(selector_path, *, config) → selector, path
 # Extract selector and path components from a HTTP path
 def extract_selector_path(selector_path, *, config):
@@ -94,6 +92,12 @@ def extract_selector_path(selector_path, *, config):
 		path = selector_path
 	
 	return selector, path
+
+class Protocol(enum.Enum):
+	gopher, http = range(2)
+
+class RequestError(OneArgumentException):
+	text = 'Error with handling request: %s'
 
 # get_request(sock, *, config) → path, protocol, rest
 # Read request from socket and parse it.
