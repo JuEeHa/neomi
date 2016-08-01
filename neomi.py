@@ -77,9 +77,9 @@ class RequestError(Exception):
 	def __str__(self):
 		return 'Error with handling request: ' + self.message
 
-# extract_selector_path(selector_path) -> selector, path
+# extract_selector_path(selector_path, *, config) -> selector, path
 # Extract selector and path components from a HTTP path
-def extract_selector_path(selector_path):
+def extract_selector_path(selector_path, *, config):
 	if len(selector_path) > 0 and selector_path[0] == '/':
 		selector_path = selector_path[1:]
 	
@@ -95,11 +95,11 @@ def extract_selector_path(selector_path):
 	
 	return selector, path
 
-# get_request(sock) -> path, protocol, rest
+# get_request(sock, *, config) -> path, protocol, rest
 # Read request from socket and parse it.
 # path is the requested path, protocol is Protocol.gopher or Protocol.http depending on the request protocol
 # rest is protocol-dependant information
-def get_request(sock):
+def get_request(sock, *, config):
 	request = b''
 	while True:
 		try:
@@ -124,7 +124,7 @@ def get_request(sock):
 	
 	if len(first_line) >= 2 and first_line[0] == 'GET':
 		selector_path = first_line[1]
-		selector, path = extract_selector_path(selector_path)
+		selector, path = extract_selector_path(selector_path, config = config)
 		return path, Protocol.http, selector
 	else:
 		if len(first_line) >= 1:
@@ -139,13 +139,14 @@ threads_lock = threading.Lock()
 
 # Worker thread implementation
 class Serve(threading.Thread):
-	def __init__(self, sock, address):
+	def __init__(self, sock, address, config):
 		self.sock = sock
 		self.address = address
+		self.config = config
 		threading.Thread.__init__(self)
 	
 	def handle_request(self):
-		path, protocol, rest = get_request(self.sock)
+		path, protocol, rest = get_request(self.sock, config = self.config)
 		answer = str((path, protocol, rest))+'\n'
 		self.sock.sendall(answer.encode('utf-8'))
 	
@@ -161,9 +162,9 @@ class Serve(threading.Thread):
 			with threads_lock:
 				threads_amount -= 1
 	
-# spawn_thread(sock, address)
+# spawn_thread(sock, address, config)
 # Spawn a new thread to serve a connection if possible, do nothing if not
-def spawn_thread(sock, address):
+def spawn_thread(sock, address, config):
 	global threads_amount, threads_lock
 
 	# See if we can spawn a new thread. If not, log an error, close the socket and return. If yes, increment the amount of threads running
@@ -176,12 +177,12 @@ def spawn_thread(sock, address):
 			threads_amount += 1
 	
 	# Spawn a new worker thread
-	Serve(sock, address).start()
+	Serve(sock, address, config).start()
 
-# listen(port) -> (Never returns)
+# listen(config) -> (Never returns)
 # Binds itself to all interfaces on designated port and listens on incoming connections
 # Spawns worker threads to handle the connections
-def listen(port):
+def listen(config):
 	# Get sockets that we listen to
 	listening_sockets = bind(port)
 	# Drop privileges, we don't need them after this
@@ -212,6 +213,6 @@ def listen(port):
 			# Set timeout for socket
 			conn.settimeout(config.socket_timeout)
 
-			spawn_thread(conn, addr[0])
+			spawn_thread(conn, addr[0], config)
 
-listen(config.port)
+listen(config)
