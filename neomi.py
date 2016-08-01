@@ -93,6 +93,38 @@ def extract_selector_path(selector_path, *, config):
 	
 	return selector, path
 
+class PathError(OneArgumentException):
+	text = 'Error with request path: %s'
+
+# normalize_path(path, *, config) → normalized_path
+# Normalize the path or raise an exception if the path is malformed
+def normalize_path(path, *, config):
+	path_components = path.split('/')
+	normalized_components = []
+
+	for component in path_components:
+		if component == '':
+			# A dummy left by // or / in beginning or end, ignore
+			continue
+		elif component == '.':
+			# foo/. = foo, ./bar = bar, ignore
+			continue
+		elif component == '..':
+			# foo/bar/.. = foo, drop last component
+			# This equality does not always hold in a real unix system. However, there are two reasons these semantics are used
+			# 1. Gopher has no concept of symlinks, and many clients have "parent directory" option that drops last component of path
+			# 2. This allows for safe usage of symlinks in gopherroot to outside of it, rogue request can't escape to parent directory
+			if len(normalized_components) > 0: # Ensure we have a component to drop and drop it
+				normalized_components.pop()
+			else:
+				# Attempted .. on an empty path, means attempting to point outside gopherroot
+				raise PathError('Path points outside gopherroot')
+		else:
+			# A normal path component, add to the normalized path
+			normalized_components.append(component)
+	
+	return '/'.join(normalized_components)
+
 class Protocol(enum.Enum):
 	gopher, http = range(2)
 
@@ -129,13 +161,19 @@ def get_request(sock, *, config):
 	if len(first_line) >= 2 and first_line[0] == 'GET':
 		selector_path = first_line[1]
 		selector, path = extract_selector_path(selector_path, config = config)
-		return path, Protocol.http, selector
+		protocol = Protocol.http
+		rest = selector
 	else:
 		if len(first_line) >= 1:
 			path = first_line[0]
 		else:
 			path = ''
-		return path, Protocol.gopher, None
+		protocol = Protocol.gophrt
+		rest = None
+	
+	path = normalize_path(path, config = config)
+
+	return path, Protocol.gopher, None
 
 # Worker thread implementation
 class Serve(threading.Thread):
