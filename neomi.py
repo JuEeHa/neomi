@@ -20,7 +20,7 @@ def error(message):
 	program_name = os.path.basename(sys.argv[0])
 	print('%s: Error: %s' % (program_name, message), file = sys.stderr)
 
-# die(message, status = 1) -> (Never returns)
+# die(message, status = 1) → (Never returns)
 # Print error message to stderr and exit with status code
 def die(message, status = 1):
 	error(message)
@@ -77,7 +77,7 @@ class RequestError(Exception):
 	def __str__(self):
 		return 'Error with handling request: ' + self.message
 
-# extract_selector_path(selector_path, *, config) -> selector, path
+# extract_selector_path(selector_path, *, config) → selector, path
 # Extract selector and path components from a HTTP path
 def extract_selector_path(selector_path, *, config):
 	if len(selector_path) > 0 and selector_path[0] == '/':
@@ -95,7 +95,7 @@ def extract_selector_path(selector_path, *, config):
 	
 	return selector, path
 
-# get_request(sock, *, config) -> path, protocol, rest
+# get_request(sock, *, config) → path, protocol, rest
 # Read request from socket and parse it.
 # path is the requested path, protocol is Protocol.gopher or Protocol.http depending on the request protocol
 # rest is protocol-dependant information
@@ -179,7 +179,7 @@ def spawn_thread(sock, address, config):
 	# Spawn a new worker thread
 	Serve(sock, address, config).start()
 
-# listen(config) -> (Never returns)
+# listen(config) → (Never returns)
 # Binds itself to all interfaces on designated port and listens on incoming connections
 # Spawns worker threads to handle the connections
 def listen(config):
@@ -192,7 +192,7 @@ def listen(config):
 	if listening_sockets == []:
 		die('Could not bind to port %i' % config.port)
 
-	# Create a poll object for the listening sockets and a fd->socket map
+	# Create a poll object for the listening sockets and a fd→socket map
 	listening = select.poll()
 	sock_by_fd = {}
 	for s in listening_sockets:
