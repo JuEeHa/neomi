@@ -133,13 +133,10 @@ def get_request(sock, *, config):
 			path = ''
 		return path, Protocol.gopher, None
 
-# Global variables to keep track of the amount of running worker threads
-threads_amount = 0
-threads_lock = threading.Lock()
-
 # Worker thread implementation
 class Serve(threading.Thread):
-	def __init__(self, sock, address, config):
+	def __init__(self, controller, sock, address, config):
+		self.controller = controller
 		self.sock = sock
 		self.address = address
 		self.config = config
@@ -159,25 +156,33 @@ class Serve(threading.Thread):
 			error('Worker thread (%s) died with: %s' % (self.address, err))
 		finally:
 			self.sock.close()
-			with threads_lock:
-				threads_amount -= 1
+			self.controller.thread_end()
 	
-# spawn_thread(sock, address, config)
-# Spawn a new thread to serve a connection if possible, do nothing if not
-def spawn_thread(sock, address, config):
-	global threads_amount, threads_lock
-
-	# See if we can spawn a new thread. If not, log an error, close the socket and return. If yes, increment the amount of threads running
-	with threads_lock:
-		if threads_amount >= config.max_threads:
-			error('Could not serve a request from %s, worker thread limit exhausted' % address)
-			sock.close()
-			return
-		else:
-			threads_amount += 1
+class Threads_controller:
+	def __init__(self):
+		self.threads_amount = 0
+		self.threads_lock = threading.Lock()
 	
-	# Spawn a new worker thread
-	Serve(sock, address, config).start()
+	# .spawn_thread(sock, address, config)
+	# Spawn a new thread to serve a connection if possible, do nothing if not
+	def spawn_thread(self, sock, address, config):
+		# See if we can spawn a new thread. If not, log an error, close the socket and return. If yes, increment the amount of threads running
+		with self.threads_lock:
+			if self.threads_amount >= config.max_threads:
+				error('Could not serve a request from %s, worker thread limit exhausted' % address)
+				sock.close()
+				return
+			else:
+				self.threads_amount += 1
+		
+		# Spawn a new worker thread
+		Serve(self, sock, address, config).start()
+	
+	# .thread_end()
+	# Called from worker thread to signal it's exiting
+	def thread_end(self):
+		with self.threads_lock:
+			self.threads_amount -= 1
 
 # listen(config) → (Never returns)
 # Binds itself to all interfaces on designated port and listens on incoming connections
@@ -199,6 +204,9 @@ def listen(config):
 		listening.register(s, select.POLLIN)
 		sock_by_fd[s.fileno()] = s
 	del listening_sockets
+
+	# Create a controller object for the worker threads
+	threads_controller = Threads_controller()
 	
 	while True:
 		# Wait for listening sockets to get activity
@@ -213,7 +221,7 @@ def listen(config):
 			# Set timeout for socket
 			conn.settimeout(config.socket_timeout)
 
-			spawn_thread(conn, addr[0], config)
+			threads_controller.spawn_thread(conn, addr[0], config)
 
 if __name__ == '__main__':
 	listen(default_config)
