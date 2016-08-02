@@ -1,7 +1,10 @@
+import configparser
 import enum
 import os
+import pathlib
 import select
 import socket
+import stat
 import sys
 import threading
 import time
@@ -9,6 +12,8 @@ import urllib.parse
 
 class default_config: None
 
+default_config.fallback_mimetype = 'application/octet-stream'
+default_config.gopher_root = pathlib.Path(os.environ['HOME']) / 'gopher'
 default_config.max_threads = 8192
 default_config.port = 7777
 default_config.recognised_selectors = ['0', '1', '5', '9', 'g', 'h', 'I', 's']
@@ -274,6 +279,79 @@ def get_request(sockreader, *, config):
 
 	return path, protocol, None
 
+infofiles_cached = set()
+infofiles_cached_lock = threading.Lock()
+
+# read_infofile(file_path)
+# Reads into caches the contents of .filesinfo file at same directory as file_path
+def read_infofile(file_path):
+	with infofiles_cached_lock:
+		if file_path in infofiles_cached:
+			return
+
+	infofile = configparser.ConfigParser()
+
+	infofile_path = file_path.parent / '.filesinfo'
+	infofile.read(str(infofile_path))
+
+	for file in infofile.sections():
+		if 'mimetype' in infofile[file]:
+			with mimetype_cache_lock:
+				mimetype_cache[file_path.parent / file] = infofile[file]['mimetype']
+
+	with infofiles_cached_lock:
+		infofiles_cached.add(file_path)
+
+# TODO: Read from file
+extension_mimetypes = {'.txt': 'text/plain', '.text': 'text/plain', '.log': 'text/plain'}
+
+mimetype_cache = {}
+mimetype_cache_lock = threading.Lock()
+
+# get_mimetype(full_path, *, config) → mimetype
+# Return the mime type of given file
+def get_mimetype(full_path, *, config):
+	mimetype = None
+	cached = False
+
+	# Look at the information file in the same directory
+	read_infofile(full_path)
+
+	# Try looking up from cache
+	with mimetype_cache_lock:
+		if full_path in mimetype_cache:
+			mimetype = mimetype_cache[full_path]
+			cached = True
+
+	# Try extension
+	if mimetype is None:
+		extension = full_path.suffix
+		if extension in extension_mimetypes:
+			mimetype = extension_mimetypes[extension]
+
+	# Nothing worked, use fallback
+	if mimetype is None:
+		mimetype = config.fallback_mimetype
+
+	# Write into the cache
+	if not cached:
+		with mimetype_cache_lock:
+			mimetype_cache[full_path] = mimetype
+
+	return mimetype
+
+# get_full_path(path, *, config) → full_path
+# Figure out full path for the file
+def get_full_path(path, *, config):
+	full_path = config.gopher_root / path
+
+	# If it's a directory, use the gophermap file in said directory instead
+	st = os.stat(str(full_path))
+	if stat.S_ISDIR(st.st_mode):
+		full_path = full_path / 'gophermap'
+
+	return full_path
+
 # Worker thread implementation
 class Serve(threading.Thread):
 	def __init__(self, controller, sock, address, config):
@@ -285,9 +363,21 @@ class Serve(threading.Thread):
 
 	def handle_request(self):
 		sockreader = SocketReader(self.sock)
+
 		path, protocol, rest = get_request(sockreader, config = self.config)
-		answer = str((path, protocol, rest))+'\n'
-		self.sock.sendall(answer.encode('utf-8'))
+		try:
+			try:
+				full_path = get_full_path(path, config = self.config)
+				mimetype = get_mimetype(full_path, config = self.config)
+			except FileNotFoundError:
+				message = '%s not found\n' % path
+				self.sock.sendall(message.encode('utf-8'))
+			else:
+				answer = 'Path: %s\nProtocol: %s\nRest of header data: %s\nMime type: %s\n' % (path, protocol, rest, mimetype)
+				self.sock.sendall(answer.encode('utf-8'))
+		except BaseException as err:
+			self.sock.sendall('Internal server error\n'.encode('utf-8'))
+			raise err
 
 	def run(self):
 		global threads_amount, threads_lock
