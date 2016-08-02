@@ -521,14 +521,21 @@ class Serve(threading.Thread):
 			try:
 				full_path = get_full_path(path, config = self.config)
 				mimetype = get_mimetype(full_path, config = self.config)
+				file = open(str(full_path), 'rb')
+
 			except FileNotFoundError:
 				reader = StringReader('%s not found\n' % path)
 				send_header(self.sock, protocol, Status.notfound, 'text/plain', config = self.config)
 				send_file(self.sock, reader, protocol, 'text/plain', config = self.config)
+
 			else:
-				reader = StringReader('Path: %s\nProtocol: %s\nRest of header data: %s\nMime type: %s\n' % (path, protocol, rest, mimetype))
-				send_header(self.sock, protocol, Status.ok, 'text/plain', config = self.config)
-				send_file(self.sock, reader, protocol, 'text/plain', config = self.config)
+				reader = FileReader(file)
+
+				send_header(self.sock, protocol, Status.ok, mimetype, config = self.config)
+				send_file(self.sock, reader, protocol, mimetype, config = self.config)
+
+				file.close()
+
 		except BaseException as err:
 			reader = StringReader('Internal server error\n')
 			send_header(self.sock, protocol, Status.error, 'text/plain', config = self.config)
