@@ -105,7 +105,8 @@ def SocketReader(sock):
 
 			if command is not None:
 				if command == SocketReaderCommands.stop:
-					return
+					# Return the rest of data in buffer
+					return chunk
 				else:
 					raise CommandError('%s not recognised' % repr(command))
 
