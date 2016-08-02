@@ -97,7 +97,7 @@ class CommandError(OneArgumentException):
 class SocketReadError(OneArgumentException):
 	text = 'Error reading socket: %s'
 
-class SocketReaderCommands(enum.Enum):
+class ReaderCommands(enum.Enum):
 	stop = range(1)
 
 # SocketReader(sock) → <SocketReader instance>
@@ -106,13 +106,13 @@ class SocketReaderCommands(enum.Enum):
 def SocketReader(sock):
 	chunk = b''
 	while True:
-		for byte in chunk:
-			command = yield byte
+		for index in range(len(chunk)):
+			command = yield chunk[index]
 
 			if command is not None:
-				if command == SocketReaderCommands.stop:
+				if command == ReaderCommands.stop:
 					# Return the rest of data in buffer
-					return chunk
+					return chunk[index + 1:]
 				else:
 					raise CommandError('%s not recognised' % repr(command))
 
@@ -123,6 +123,42 @@ def SocketReader(sock):
 
 		if not chunk:
 			break
+
+# FileReader(file) → <FileReader instance>
+# next(<FileReader instance>) → byte_of_data
+# Wraps a bytefile object and exposes it as per-byte iterator. Does not close the file when it exits
+def FileReader(file):
+	chunk = b''
+	while True:
+		for index in range(len(chunk)):
+			command = yield chunk[index]
+
+			if command is not None:
+				if command == ReaderCommands.stop:
+					# Return the rest of data in buffer
+					return chunk[index + 1:]
+				else:
+					raise CommandError('%s not recognised' % repr(command))
+
+		chunk = file.read(1024)
+
+		if not chunk:
+			break
+
+# StringReader(string) → <StringReader instance>
+# next(<StringReader instance>) → byte_of_data
+# Wraps a unicode string in a inteface like SocketReader or FileReader
+def StringReader(string):
+	encoded = string.encode('utf-8')
+	for index in range(len(encoded)):
+		command = yield encoded[index]
+
+		if command is not None:
+			if command == ReaderCommands.stop:
+				# Return the rest of data
+				return encoded[index + 1:]
+			else:
+				raise CommandError('%s not recognised' % repr(command))
 
 # extract_selector_path(selector_path, *, config) → selector, path
 # Extract selector and path components from a HTTP path
@@ -361,9 +397,9 @@ class Status:
 def is_text_from_mimetype(mimetype):
 	return mimetype.split('/')[0] == 'text'
 
-# create_header(protocol, status, mimetype, *, config) → header
-# Create a header that matches the provided information
-def create_header(protocol, status, mimetype, *, config):
+# send_header(sock, protocol, status, mimetype, *, config)
+# Send a header that matches the provided information
+def send_header(sock, protocol, status, mimetype, *, config):
 	is_text = is_text_from_mimetype(mimetype)
 
 	if protocol == Protocol.http:
@@ -397,8 +433,76 @@ def create_header(protocol, status, mimetype, *, config):
 	elif protocol == Protocol.gopher:
 		# Gopher has no header
 		header = b''
+	
+	else:
+		unreachable()
 
-	return header
+	sock.sendall(header)
+
+# send_binaryfile(sock, reader, protocol, *, config)
+# Send the data in the given reader as binary
+def send_binaryfile(sock, reader, protocol, *, config):
+	buffer_max = 1024
+	buffer = bytearray()
+	left = buffer_max
+
+	for byte in reader:
+		if left == 0:
+			# Flush buffer
+			sock.sendall(buffer)
+			left = buffer_max
+
+		buffer.append(byte)
+	
+	# If there was something left in the buffer, flush it
+	if len(buffer) != 0:
+		sock.sendall(buffer)
+
+# send_textfile(sock, reader, protocol, *, config)
+# Send the data in the given reader, encoded correctly as text file
+def send_textfile(sock, reader, protocol, *, config):
+	if protocol == Protocol.http:
+		# HTTP needs no additional encoding, send as binary
+		send_binaryfile(sock, reader, protocol, config = config)
+
+	elif protocol == Protocol.gopher or protocol == Protocol.gopherplus:
+		line = bytearray()
+
+		for byte in reader:
+			if chr(byte) == '\n':
+				# Append \r\n to end of line, send it, and clear
+				line.extend(b'\r\n')
+				sock.sendall(line)
+				line = bytearray()
+
+			elif chr(byte) == '.' and len(line) == 0:
+				# . in the beginning of line, needs to be quoted
+				line.extend(b'..')
+
+			else:
+				# Add to the line
+				line.append(byte)
+
+		# If there was no terminating \n, flush the line buffer
+		if len(line) != 0:
+			line.extend(b'\r\n')
+			sock.sendall(line)
+
+		# Signal end of text
+		sock.sendall(b'.\r\n')
+	
+	else:
+		unreachable()
+
+# send_file(sock, reader, protocol, mimetype, *, config)
+# Send data from reader over the socket with right encoding for the mimetype
+def send_file(sock, reader, protocol, mimetype, *, config):
+	if is_text_from_mimetype(mimetype):
+		# Send as text
+		send_textfile(sock, reader, protocol, config = config)
+	else:
+		# Send as binary file
+		send_binaryfile(sock, reader, protocol, config = config)
 
 # Worker thread implementation
 class Serve(threading.Thread):
@@ -418,16 +522,17 @@ class Serve(threading.Thread):
 				full_path = get_full_path(path, config = self.config)
 				mimetype = get_mimetype(full_path, config = self.config)
 			except FileNotFoundError:
-				header = create_header(protocol, Status.notfound, 'text/plain', config = self.config)
-				message = '%s not found\r\n' % path
-				self.sock.sendall(header + message.encode('utf-8'))
+				reader = StringReader('%s not found\n' % path)
+				send_header(self.sock, protocol, Status.notfound, 'text/plain', config = self.config)
+				send_file(self.sock, reader, protocol, 'text/plain', config = self.config)
 			else:
-				header = create_header(protocol, Status.ok, 'text/plain', config = self.config)
-				answer = 'Path: %s\r\nProtocol: %s\r\nRest of header data: %s\r\nMime type: %s\r\n' % (path, protocol, rest, mimetype)
-				self.sock.sendall(header + answer.encode('utf-8'))
+				reader = StringReader('Path: %s\nProtocol: %s\nRest of header data: %s\nMime type: %s\n' % (path, protocol, rest, mimetype))
+				send_header(self.sock, protocol, Status.ok, 'text/plain', config = self.config)
+				send_file(self.sock, reader, protocol, 'text/plain', config = self.config)
 		except BaseException as err:
-			header = create_header(protocol, Status.error, 'text/plain', config = self.config)
-			self.sock.sendall(header + 'Internal server error\r\n'.encode('utf-8'))
+			reader = StringReader('Internal server error\n')
+			send_header(self.sock, protocol, Status.error, 'text/plain', config = self.config)
+			send_file(self.sock, reader, protocol, 'text/plain', config = self.config)
 			raise err
 
 	def run(self):
