@@ -5,9 +5,9 @@ import pathlib
 import select
 import socket
 import stat
+import subprocess
 import sys
 import threading
-import time
 import urllib.parse
 
 class default_config: None
@@ -504,6 +504,24 @@ def send_file(sock, reader, protocol, mimetype, *, config):
 		# Send as binary file
 		send_binaryfile(sock, reader, protocol, config = config)
 
+# test_is_cgi(full_path, *, config) → is_cgi
+# Tests whether file associated with full_path is CGI
+def test_is_cgi(full_path, *, config):
+	# Assume anything runnable is CGI
+	return os.access(str(full_path), os.X_OK)
+
+# get_file(full_path, *, config)
+# Get a file object that can be passed to FileReader, either of file's contents of CGI's output
+def get_file(full_path, *, config):
+	if test_is_cgi(full_path, config = config):
+		# Run CGI and use its output
+		proc = subprocess.Popen([str(full_path)], stdout=subprocess.PIPE)
+		return proc.stdout
+	else:
+		# Open file in binary mode
+		file = open(str(full_path), 'rb')
+		return file
+
 # Worker thread implementation
 class Serve(threading.Thread):
 	def __init__(self, controller, sock, address, config):
@@ -521,7 +539,7 @@ class Serve(threading.Thread):
 			try:
 				full_path = get_full_path(path, config = self.config)
 				mimetype = get_mimetype(full_path, config = self.config)
-				file = open(str(full_path), 'rb')
+				file = get_file(full_path, config = self.config)
 
 			except FileNotFoundError:
 				reader = StringReader('%s not found\n' % path)
