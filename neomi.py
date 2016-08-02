@@ -62,12 +62,17 @@ def bind(port, backlog = 1):
 			s = socket.socket(af, socktype, proto)
 		except OSError:
 			continue
+
 		# Make IPv6 socket only bind on IPv6 address, otherwise may clash with IPv4 and not get enabled
 		if af == socket.AF_INET6:
 			try:
 				s.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
 			except OSError:
 				pass
+
+		# Set SO_REUSEADDR for less painful server restarting
+		s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
 		try:
 			s.bind(sa)
 			s.listen(backlog)
@@ -78,7 +83,6 @@ def bind(port, backlog = 1):
 		sockets.append(s)
 
 	return sockets
-
 
 # drop_privileges()
 # Drops set[ug]id, die()s if unsuccesful
