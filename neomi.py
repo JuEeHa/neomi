@@ -277,7 +277,7 @@ def get_request(sockreader, *, config):
 
 	path = normalize_path(path, config = config)
 
-	return path, protocol, None
+	return path, protocol, rest
 
 infofiles_cached = set()
 infofiles_cached_lock = threading.Lock()
