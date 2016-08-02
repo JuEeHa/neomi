@@ -12,6 +12,7 @@ import urllib.parse
 
 class default_config: None
 
+default_config.charset = 'utf-8'
 default_config.fallback_mimetype = 'application/octet-stream'
 default_config.gopher_root = pathlib.Path(os.environ['HOME']) / 'gopher'
 default_config.max_threads = 8192
@@ -352,6 +353,53 @@ def get_full_path(path, *, config):
 
 	return full_path
 
+class Status:
+	ok, notfound, error = range(3)
+
+# is_text_from_mimetype(mimetype) → is_text
+# A simple "is this data text" heuristic
+def is_text_from_mimetype(mimetype):
+	return mimetype.split('/')[0] == 'text'
+
+# create_header(protocol, status, mimetype, *, config) → header
+# Create a header that matches the provided information
+def create_header(protocol, status, mimetype, *, config):
+	is_text = is_text_from_mimetype(mimetype)
+
+	if protocol == Protocol.http:
+		content_type = b'Content-type: ' + mimetype.encode('utf-8')
+		# Add character set encoding information if we are transmitting text
+		if is_text:
+			content_type += ('; charset=%s' % config.charset).encode('utf-8')
+
+		if status == Status.ok:
+			statusline = b'HTTP/1.1 200 OK'
+		elif status == Status.notfound:
+			statusline = b'HTTP/1.1 404 Not Found'
+		elif status == Status.error:
+			statusline = b'HTTP/1.1 500 Internal Server Error'
+
+		header = statusline + b'\r\n' + content_type + b'\r\n\r\n'
+
+	elif protocol == Protocol.gopherplus:
+		if status == Status.ok:
+			# Gopher has two ways to transmit data of unknown size, text (+-1) and binary (+-2)
+			if is_text:
+				header = b'+-1\r\n'
+			else:
+				header = b'+-2\r\n'
+		elif status == Status.notfound:
+			header = b'--1\r\n'
+		elif status == Status.error:
+			# Technically -2 means "Try again later", but there is no code for "server blew up"
+			header = b'--2\r\n'
+	
+	elif protocol == Protocol.gopher:
+		# Gopher has no header
+		header = b''
+
+	return header
+
 # Worker thread implementation
 class Serve(threading.Thread):
 	def __init__(self, controller, sock, address, config):
@@ -370,13 +418,16 @@ class Serve(threading.Thread):
 				full_path = get_full_path(path, config = self.config)
 				mimetype = get_mimetype(full_path, config = self.config)
 			except FileNotFoundError:
-				message = '%s not found\n' % path
-				self.sock.sendall(message.encode('utf-8'))
+				header = create_header(protocol, Status.notfound, 'text/plain', config = self.config)
+				message = '%s not found\r\n' % path
+				self.sock.sendall(header + message.encode('utf-8'))
 			else:
-				answer = 'Path: %s\nProtocol: %s\nRest of header data: %s\nMime type: %s\n' % (path, protocol, rest, mimetype)
-				self.sock.sendall(answer.encode('utf-8'))
+				header = create_header(protocol, Status.ok, 'text/plain', config = self.config)
+				answer = 'Path: %s\r\nProtocol: %s\r\nRest of header data: %s\r\nMime type: %s\r\n' % (path, protocol, rest, mimetype)
+				self.sock.sendall(header + answer.encode('utf-8'))
 		except BaseException as err:
-			self.sock.sendall('Internal server error\n'.encode('utf-8'))
+			header = create_header(protocol, Status.error, 'text/plain', config = self.config)
+			self.sock.sendall(header + 'Internal server error\r\n'.encode('utf-8'))
 			raise err
 
 	def run(self):
