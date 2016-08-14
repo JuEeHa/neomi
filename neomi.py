@@ -554,6 +554,7 @@ class Serve(threading.Thread):
 				file = get_file(full_path, config = self.config)
 
 			except FileNotFoundError:
+				log('%s: Requested path not found: %s' % (self.address, path))
 				reader = StringReader('%s not found\n' % path)
 				send_header(self.sock, protocol, Status.notfound, 'text/plain', config = self.config)
 				send_file(self.sock, reader, protocol, 'text/plain', config = self.config)
