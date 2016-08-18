@@ -352,7 +352,7 @@ def read_infofile(file_path):
 		infofiles_cached.add(file_path)
 
 # TODO: Read from file
-extension_mimetypes = {'.txt': 'text/plain', '.text': 'text/plain', '.log': 'text/plain'}
+extension_mimetypes = {'.txt': 'text/plain', '.text': 'text/plain', '.log': 'text/plain', '.html': 'text/html'}
 
 mimetype_cache = {}
 mimetype_cache_lock = threading.Lock()
