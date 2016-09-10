@@ -9,6 +9,7 @@ import stat
 import subprocess
 import sys
 import threading
+import time
 import urllib.parse
 
 class default_config: None
@@ -27,7 +28,8 @@ default_config.socket_timeout = 1
 # Print error message to stderr
 def error(message):
 	program_name = os.path.basename(sys.argv[0])
-	print('%s: Error: %s' % (program_name, message), file = sys.stderr)
+	print('%s: %s Error: %s' % (program_name, time.strftime('%Y-%m-%d %H:%M:%S'), message), file = sys.stderr)
+	sys.stderr.flush()
 
 # die(message, status = 1) → (Never returns)
 # Print error message to stderr and exit with status code
@@ -39,7 +41,8 @@ def die(message, status = 1):
 # Print a log message to stdout
 def log(message):
 	program_name = os.path.basename(sys.argv[0])
-	print('%s: %s' % (program_name, message))
+	print('%s: %s %s' % (program_name, time.strftime('%Y-%m-%d %H:%M:%S'), message))
+	sys.stdout.flush()
 
 # A base for Exeptions that are used with one argument and that return a string that incorporates said argument
 class OneArgumentException(Exception):
@@ -560,6 +563,7 @@ class Serve(threading.Thread):
 				send_file(self.sock, reader, protocol, 'text/plain', config = self.config)
 
 			else:
+				log('%s requested path %s' % (self.address, path))
 				reader = FileReader(file)
 
 				send_header(self.sock, protocol, Status.ok, mimetype, config = self.config)
