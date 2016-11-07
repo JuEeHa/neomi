@@ -297,6 +297,17 @@ def get_request(sockreader, *, config):
 
 		rest = selector
 
+		# Try to extract user agent
+		useragent = None
+		for line in request.split(b'\n'):
+			ua_string = b'user-agent:'
+			if len(line) >= len(ua_string) and line.lower()[:len(ua_string)] == ua_string:
+				try:
+					useragent = line[len(ua_string):].decode('utf-8')
+				except UnicodeDecodeError:
+					useragent = line[len(ua_string):].decode('latin-1')
+				useragent = useragent.strip()
+
 	elif protocol == Protocol.gopher:
 		rest = None
 
@@ -324,12 +335,15 @@ def get_request(sockreader, *, config):
 				protocol = Protocol.gopherplus
 				rest = field
 
+		# No useragents in gopher
+		useragent = None
+
 	else:
 		unreachable()
 
 	path = normalize_path(path, config = config)
 
-	return path, protocol, rest
+	return path, protocol, useragent, rest
 
 infofiles_cached = set()
 infofiles_cached_lock = threading.Lock()
@@ -549,7 +563,7 @@ class Serve(threading.Thread):
 	def handle_request(self):
 		sockreader = SocketReader(self.sock)
 
-		path, protocol, rest = get_request(sockreader, config = self.config)
+		path, protocol, useragent, rest = get_request(sockreader, config = self.config)
 		try:
 			try:
 				full_path = get_full_path(path, config = self.config)
@@ -576,6 +590,9 @@ class Serve(threading.Thread):
 			send_header(self.sock, protocol, Status.error, 'text/plain', config = self.config)
 			send_file(self.sock, reader, protocol, 'text/plain', config = self.config)
 			raise err
+
+		if useragent is not None:
+			log('User agent: %s' % useragent)
 
 	def run(self):
 		global threads_amount, threads_lock
