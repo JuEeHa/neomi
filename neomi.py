@@ -1,3 +1,4 @@
+import cgi
 import configparser
 import enum
 import ipaddress
@@ -23,6 +24,17 @@ default_config.port = 7070
 default_config.recognised_selectors = ['0', '1', '5', '9', 'g', 'h', 'I', 's']
 default_config.request_max_size = 8192
 default_config.socket_timeout = 1
+default_config.hurl_redirect_page = """<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="refresh" content="2; url=__raw_url__"/>
+		<title>Redirecting to __escaped_url__</title>
+	<head>
+	<body>
+		<p>Your gopher client doesn't support the hURL specification. If you are not redirected after 2s, click the link.</p>
+		<p>Redirecting to <a href="__raw_url__">__escaped_url__</a></p>
+	</body>
+</html>"""
 
 # error(message)
 # Print error message to stderr
@@ -341,8 +353,6 @@ def get_request(sockreader, *, config):
 	else:
 		unreachable()
 
-	path = normalize_path(path, config = config)
-
 	return path, protocol, useragent, rest
 
 infofiles_cached = set()
@@ -551,6 +561,18 @@ def get_file(full_path, *, config):
 		file = open(str(full_path), 'rb')
 		return file
 
+# is_hurl_path(path_raw) → is_hurl
+# Returns whether the path is a hURL redirect
+def is_hurl_path(path_raw):
+	return len(path_raw) >= 4 and path_raw[:4] == 'URL:'
+
+# hurl_redirect(path_raw, *, config) → redirect_page
+# Return a HTML page for hURL redirect
+def hurl_redirect(path_raw, *, config):
+	url_raw = path_raw[4:]
+	url_escaped = cgi.escape(url_raw)
+	return config.hurl_redirect_page.replace('__raw_url__', url_raw).replace('__escaped_url__', url_escaped)
+
 # Worker thread implementation
 class Serve(threading.Thread):
 	def __init__(self, controller, sock, address, config):
@@ -563,27 +585,38 @@ class Serve(threading.Thread):
 	def handle_request(self):
 		sockreader = SocketReader(self.sock)
 
-		path, protocol, useragent, rest = get_request(sockreader, config = self.config)
-		try:
-			try:
-				full_path = get_full_path(path, config = self.config)
-				mimetype = get_mimetype(full_path, config = self.config)
-				file = get_file(full_path, config = self.config)
+		path_raw, protocol, useragent, rest = get_request(sockreader, config = self.config)
 
-			except FileNotFoundError:
-				log('%s [%s]: Requested path not found: %s' % (self.address, protocol.name, path))
-				reader = StringReader('%s not found\n' % path)
-				send_header(self.sock, protocol, Status.notfound, 'text/plain', config = self.config)
-				send_file(self.sock, reader, protocol, 'text/plain', config = self.config)
+		try:
+			if is_hurl_path(path_raw):
+				log('%s [%s]: hURL %s' % (self.address, protocol.name, path_raw))
+				reader = StringReader(hurl_redirect(path_raw, config = self.config))
+
+				send_header(self.sock, protocol, Status.ok, 'text/html', config = self.config)
+				send_file(self.sock, reader, protocol, 'text/html', config = self.config)
 
 			else:
-				log('%s [%s] requested path %s' % (self.address, protocol.name, path))
-				reader = FileReader(file)
+				path = normalize_path(path_raw, config = self.config)
 
-				send_header(self.sock, protocol, Status.ok, mimetype, config = self.config)
-				send_file(self.sock, reader, protocol, mimetype, config = self.config)
+				try:
+					full_path = get_full_path(path, config = self.config)
+					mimetype = get_mimetype(full_path, config = self.config)
+					file = get_file(full_path, config = self.config)
 
-				file.close()
+				except FileNotFoundError:
+					log('%s [%s]: Requested path not found: %s' % (self.address, protocol.name, path_raw))
+					reader = StringReader('%s not found\n' % path_raw)
+					send_header(self.sock, protocol, Status.notfound, 'text/plain', config = self.config)
+					send_file(self.sock, reader, protocol, 'text/plain', config = self.config)
+
+				else:
+					log('%s [%s] requested path %s' % (self.address, protocol.name, path_raw))
+					reader = FileReader(file)
+
+					send_header(self.sock, protocol, Status.ok, mimetype, config = self.config)
+					send_file(self.sock, reader, protocol, mimetype, config = self.config)
+
+					file.close()
 
 		except BaseException as err:
 			reader = StringReader('Internal server error\n')
