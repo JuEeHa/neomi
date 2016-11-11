@@ -566,10 +566,9 @@ def get_file(full_path, *, config):
 def is_hurl_path(path_raw):
 	return len(path_raw) >= 4 and path_raw[:4] == 'URL:'
 
-# hurl_redirect(path_raw, *, config) → redirect_page
+# hurl_redirect(url_raw, *, config) → redirect_page
 # Return a HTML page for hURL redirect
-def hurl_redirect(path_raw, *, config):
-	url_raw = path_raw[4:]
+def hurl_redirect(url_raw, *, config):
 	url_escaped = cgi.escape(url_raw)
 	return config.hurl_redirect_page.replace('__raw_url__', url_raw).replace('__escaped_url__', url_escaped)
 
@@ -589,8 +588,9 @@ class Serve(threading.Thread):
 
 		try:
 			if is_hurl_path(path_raw):
-				log('%s [%s]: hURL %s' % (self.address, protocol.name, path_raw))
-				reader = StringReader(hurl_redirect(path_raw, config = self.config))
+				url_raw = path_raw[4:]
+				log('%s [%s] hURL %s' % (self.address, protocol.name, url_raw))
+				reader = StringReader(hurl_redirect(url_raw, config = self.config))
 
 				send_header(self.sock, protocol, Status.ok, 'text/html', config = self.config)
 				send_file(self.sock, reader, protocol, 'text/html', config = self.config)
