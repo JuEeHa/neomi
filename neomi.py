@@ -190,6 +190,9 @@ def StringReader(string):
 # extract_selector_path(selector_path, *, config) → selector, path
 # Extract selector and path components from a HTTP path
 def extract_selector_path(selector_path, *, config):
+	# URL unquote the path
+	selector_path = urllib.parse.unquote(selector_path)
+
 	if len(selector_path) > 0 and selector_path[0] == '/':
 		selector_path = selector_path[1:]
 
@@ -399,6 +402,11 @@ def get_mimetype(full_path, *, config):
 			mimetype = mimetype_cache[full_path]
 			cached = True
 
+	# See if it's a gophermap
+	if mimetype is None:
+		if full_path.name == 'gophermap':
+			mimetype = 'text/x-gophermap'
+
 	# Try extension
 	if mimetype is None:
 		extension = full_path.suffix
@@ -442,7 +450,12 @@ def send_header(sock, protocol, status, mimetype, *, config):
 	is_text = is_text_from_mimetype(mimetype)
 
 	if protocol == Protocol.http:
-		content_type = b'Content-type: ' + mimetype.encode('utf-8')
+		# We translate gophermaps into HTML, so send HTML mimetype
+		if mimetype == 'text/x-gophermap':
+			content_type = b'Content-type: text/html'
+		else:
+			content_type = b'Content-type: ' + mimetype.encode('utf-8')
+
 		# Add character set encoding information if we are transmitting text
 		if is_text:
 			content_type += ('; charset=%s' % config.charset).encode('utf-8')
@@ -533,12 +546,81 @@ def send_textfile(sock, reader, protocol, *, config):
 	else:
 		unreachable()
 
+# html_encode(bytestring) -> encoded_bytestring
+# Makes bytestring usable as HTML text
+def html_encode(bytestring):
+	return bytestring.replace(b'&', b'&amp;').replace(b'<', b'&lt;').replace(b'>', b'&gt;')
+
+# send_gophermap(sock, reader, protocol, *, config)
+# Send the gophermap in the given reader either as gophermap or HTML
+def send_gophermap(sock, reader, protocol, *, config):
+	if protocol == Protocol.gopher or protocol == Protocol.gopherplus:
+		# Gopher(+) needs no additional translation, send as text
+		send_textfile(sock, reader, protocol, config = config)
+
+	elif protocol == Protocol.http:
+		# Send header of the HTML file
+		sock.sendall(b'<!DOCTYPE html>\n<head><title>Gophermap</title></head><body><p>\n')
+
+		lines = []
+		line = bytearray()
+
+		for byte in reader:
+			if chr(byte) == '\n':
+				# Add to lines and clear
+				lines.append(line)
+				line = bytearray()
+
+			else:
+				# Add to the line
+				line.append(byte)
+
+		# If there was no terminating \n, add the line to lines
+		if len(line) != 0:
+			lines.append(line)
+
+		for line in lines:
+			# Translate to html and send it
+
+			# Split into components
+			itemtype_name, path, server, port, *_ = line.split(b'\t')
+			itemtype = itemtype_name[0:1]
+			name = itemtype_name[1:]
+
+			if itemtype == b'i':
+				# Text
+				sock.sendall(html_encode(name) + b'<br/>\n')
+
+			else:
+				# Link
+
+				# TODO: Figure out a heuristic when to pick http:// and when to pick gopher://
+
+				if port == b'70':
+					# If port is 70, don't include the port part. This allows interoperability with Idigna
+					url = b'http://' + server + b'/' + itemtype + urllib.parse.quote_from_bytes(path).encode('utf-8')
+				else:
+					url = b'http://' + server + b':' + port + b'/' + itemtype + urllib.parse.quote_from_bytes(path).encode('utf-8')
+
+				sock.sendall(b'<a href="' + url + b'">' + html_encode(name) + b'</a><br/>\n')
+
+		# Send footer of the HTML file
+		sock.sendall(b'</p></body></html>')
+
+	else:
+		unreachable()
+
 # send_file(sock, reader, protocol, mimetype, *, config)
 # Send data from reader over the socket with right encoding for the mimetype
 def send_file(sock, reader, protocol, mimetype, *, config):
-	if is_text_from_mimetype(mimetype):
+	if mimetype == 'text/x-gophermap':
+		# Send as gophermap (possibly translated into HTML)
+		send_gophermap(sock, reader, protocol, config = config)
+
+	elif is_text_from_mimetype(mimetype):
 		# Send as text
 		send_textfile(sock, reader, protocol, config = config)
+
 	else:
 		# Send as binary file
 		send_binaryfile(sock, reader, protocol, config = config)
