@@ -246,12 +246,13 @@ class RequestError(OneArgumentException):
 class Protocol(enum.Enum):
 	gopher, gopherplus, http = range(3)
 
-# get_request(sock, *, config) → path, protocol, rest
+# get_request(sock, *, config) → path, protocol, *rest
 # Read request from socket and parse it.
 # path is the requested path, protocol is Protocol.gopher or Protocol.http depending on the request protocol
 # rest is protocol-dependant information
 def get_request(sockreader, *, config):
 	protocol = None
+	just_headers = False
 
 	request = bytearray()
 
@@ -265,16 +266,21 @@ def get_request(sockreader, *, config):
 			raise RequestError('Request too long')
 
 		# We have enough data to recognise a HTTP request
-		if protocol is None and len(request) >= 4:
+		if protocol is None and len(request) >= 5:
 			# Does it look like a HTTP GET request?
-			if request[:3] == bytearray(b'GET') and chr(request[3]) in [' ', '\r', '\t']:
+			if request[:3] == b'GET' and chr(request[3]) in [' ', '\r', '\t']:
 				# Yes, mark HTTP as protocol
 				protocol = Protocol.http
+			# Does it look like a HTTP HEAD request?
+			elif request[:4] == b'HEAD' and chr(request[4]) in [' ', '\r', '\t']:
+				# Yes, mark HTTP as the protocol and that we'll only return the headers
+				protocol = Protocol.http
+				just_headers = True
 			else:
 				# No, mark Gopher as protocol
 				protocol = Protocol.gopher
 
-		# End of line reached before a HTTP GET request found, mark Gopher as protocol
+		# End of line reached before a HTTP GET or HEAD request found, mark Gopher as protocol
 		if protocol is None and len(request) >= 1 and request[-1:] == bytearray(b'\n'):
 			protocol = Protocol.gopher
 
@@ -296,8 +302,8 @@ def get_request(sockreader, *, config):
 
 	if protocol == Protocol.http:
 		length = len(request)
-		# Start after GET
-		index = 3
+		# Start after GET/HEAD
+		index = 4 if just_headers else 3
 		# Skip witespace
 		while index < length and chr(request[index]) in [' ', '\r', '\n', '\t']: index += 1
 		# Found the start of the requested path
@@ -310,8 +316,6 @@ def get_request(sockreader, *, config):
 		selector_path = urllib.parse.unquote(request[path_start:path_end].decode('utf-8'))
 		selector, path = extract_selector_path(selector_path, config = config)
 
-		rest = selector
-
 		# Try to extract user agent
 		useragent = None
 		for line in request.split(b'\n'):
@@ -323,8 +327,10 @@ def get_request(sockreader, *, config):
 					useragent = line[len(ua_string):].decode('latin-1')
 				useragent = useragent.strip()
 
+		rest = (selector, just_headers, useragent)
+
 	elif protocol == Protocol.gopher:
-		rest = None
+		rest = ()
 
 		length = len(request)
 		index = 0
@@ -348,15 +354,12 @@ def get_request(sockreader, *, config):
 			if len(field) >= 1 and field[0] in ['+', '!', '$']:
 				# It was Gopher+, let's update protocol value and stash the field into rest
 				protocol = Protocol.gopherplus
-				rest = field
-
-		# No useragents in gopher
-		useragent = None
+				rest = (field,)
 
 	else:
 		unreachable()
 
-	return path, protocol, useragent, rest
+	return (path, protocol) + rest
 
 infofiles_cached = set()
 infofiles_cached_lock = threading.Lock()
@@ -666,7 +669,11 @@ class Serve(threading.Thread):
 	def handle_request(self):
 		sockreader = SocketReader(self.sock)
 
-		path_raw, protocol, useragent, rest = get_request(sockreader, config = self.config)
+		path_raw, protocol, *rest = get_request(sockreader, config = self.config)
+
+		just_headers = False
+		if protocol == Protocol.http:
+			selector, just_headers, useragent = rest
 
 		try:
 			if is_hurl_path(path_raw):
@@ -689,14 +696,16 @@ class Serve(threading.Thread):
 					log('%s [%s]: Requested path not found: %s' % (self.address, protocol.name, path_raw))
 					reader = StringReader('%s not found\n' % path_raw)
 					send_header(self.sock, protocol, Status.notfound, 'text/plain', config = self.config)
-					send_file(self.sock, reader, protocol, 'text/plain', config = self.config)
+					if not just_headers:
+						send_file(self.sock, reader, protocol, 'text/plain', config = self.config)
 
 				else:
 					log('%s [%s] requested path %s' % (self.address, protocol.name, path_raw))
 					reader = FileReader(file)
 
 					send_header(self.sock, protocol, Status.ok, mimetype, config = self.config)
-					send_file(self.sock, reader, protocol, mimetype, config = self.config)
+					if not just_headers:
+						send_file(self.sock, reader, protocol, mimetype, config = self.config)
 
 					file.close()
 
@@ -706,7 +715,7 @@ class Serve(threading.Thread):
 			send_file(self.sock, reader, protocol, 'text/plain', config = self.config)
 			raise err
 
-		if useragent is not None:
+		if protocol == Protocol.http:
 			log('User agent: %s' % useragent)
 
 	def run(self):
