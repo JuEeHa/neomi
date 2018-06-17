@@ -24,6 +24,7 @@ default_config.port = 7070
 default_config.recognised_selectors = ['0', '1', '5', '9', 'g', 'h', 'I', 's']
 default_config.request_max_size = 8192
 default_config.socket_timeout = 1
+default_config.no_selector_whitelist = {'robots.txt', 'favicon.ico'}
 default_config.hurl_redirect_page = """<!DOCTYPE html>
 <html>
 	<head>
@@ -199,8 +200,8 @@ def extract_selector_path(selector_path, *, config):
 	if len(selector_path) == 0: # / is by default of type 1
 		selector = '1'
 		path = selector_path
-	elif selector_path == 'robots.txt': # Special case robots.txt
-		selector = '0'
+	elif selector_path in config.no_selector_whitelist: # Have a whitelist for selectorless files
+		selector = None
 		path = selector_path
 	else: # Extract the selector
 		selector = selector_path[0]
