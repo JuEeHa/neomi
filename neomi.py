@@ -199,12 +199,12 @@ def extract_selector_path(selector_path, *, config):
 	if len(selector_path) == 0: # / is by default of type 1
 		selector = '1'
 		path = selector_path
-	elif selector_path[0] in config.recognised_selectors: # Requested path has a selector we recognise, extract it
+	elif selector_path == 'robots.txt': # Special case robots.txt
+		selector = '0'
+		path = selector_path
+	else: # Extract the selector
 		selector = selector_path[0]
 		path = selector_path[1:]
-	else: # We couldn't recognise any selector, return None for it
-		selector = None
-		path = selector_path
 
 	return selector, path
 
