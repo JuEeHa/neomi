@@ -441,7 +441,7 @@ def get_full_path(path, *, config):
 	return full_path
 
 class Status:
-	ok, notfound, error = range(3)
+	ok, notfound, error, badrequest = range(4)
 
 # is_text_from_mimetype(mimetype) → is_text
 # A simple "is this data text" heuristic
@@ -470,6 +470,8 @@ def send_header(sock, protocol, status, mimetype, *, config):
 			statusline = b'HTTP/1.1 404 Not Found'
 		elif status == Status.error:
 			statusline = b'HTTP/1.1 500 Internal Server Error'
+		elif status == Status.badrequest:
+			statusline = b'HTTP/1.1 400 Bad Request'
 
 		header = statusline + b'\r\n' + content_type + b'\r\n\r\n'
 
@@ -485,6 +487,9 @@ def send_header(sock, protocol, status, mimetype, *, config):
 		elif status == Status.error:
 			# Technically -2 means "Try again later", but there is no code for "server blew up"
 			header = b'--2\r\n'
+		elif status == Status.badrequest:
+			# Technically -1 means "File not found", but there is no code for "bad request"
+			header = b'--1\r\n'
 
 	elif protocol == Protocol.gopher:
 		# Gopher has no header
@@ -677,7 +682,14 @@ class Serve(threading.Thread):
 			itemtype, just_headers, useragent = rest
 
 		try:
-			if is_hurl_path(path_raw):
+			if protocol == Protocol.http and itemtype is not None and itemtype not in self.config.recognised_itemtypes:
+				# If we don't recognize the requested itemtype, signal that it was a bad request
+				log('%s [%s] requested path %s with bad itemtype %s' % (self.address, protocol.name, path_raw, itemtype))
+				reader = StringReader('%s not recognized as an item type\n\nRecognized ones are %s\n' % (itemtype, ', '.join(self.config.recognised_itemtypes)))
+				send_header(self.sock, protocol, Status.badrequest, 'text/plain', config = self.config)
+				send_file(self.sock, reader, protocol, 'text/plain', config = self.config)
+
+			elif is_hurl_path(path_raw):
 				url_raw = path_raw[4:]
 				log('%s [%s] hURL %s' % (self.address, protocol.name, url_raw))
 				reader = StringReader(hurl_redirect(url_raw, config = self.config))
