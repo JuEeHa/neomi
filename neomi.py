@@ -21,10 +21,10 @@ default_config.fallback_mimetype = 'application/octet-stream'
 default_config.gopher_root = pathlib.Path(os.environ['HOME']) / 'gopher'
 default_config.max_threads = 8192
 default_config.port = 7070
-default_config.recognised_selectors = ['0', '1', '5', '9', 'g', 'h', 'I', 's']
+default_config.recognised_itemtypes = ['0', '1', '5', '9', 'g', 'h', 'I', 's']
 default_config.request_max_size = 8192
 default_config.socket_timeout = 1
-default_config.no_selector_whitelist = {'robots.txt', 'favicon.ico'}
+default_config.no_itemtype_whitelist = {'robots.txt', 'favicon.ico'}
 default_config.hurl_redirect_page = """<!DOCTYPE html>
 <html>
 	<head>
@@ -188,26 +188,26 @@ def StringReader(string):
 			else:
 				raise CommandError('%s not recognised' % repr(command))
 
-# extract_selector_path(selector_path, *, config) → selector, path
-# Extract selector and path components from a HTTP path
-def extract_selector_path(selector_path, *, config):
+# extract_itemtype_path(itemtype_path, *, config) → itemtype, path
+# Extract itemtype and path components from a HTTP path
+def extract_itemtype_path(itemtype_path, *, config):
 	# URL unquote the path
-	selector_path = urllib.parse.unquote(selector_path)
+	itemtype_path = urllib.parse.unquote(itemtype_path)
 
-	if len(selector_path) > 0 and selector_path[0] == '/':
-		selector_path = selector_path[1:]
+	if len(itemtype_path) > 0 and itemtype_path[0] == '/':
+		itemtype_path = itemtype_path[1:]
 
-	if len(selector_path) == 0: # / is by default of type 1
-		selector = '1'
-		path = selector_path
-	elif selector_path in config.no_selector_whitelist: # Have a whitelist for selectorless files
-		selector = None
-		path = selector_path
-	else: # Extract the selector
-		selector = selector_path[0]
-		path = selector_path[1:]
+	if len(itemtype_path) == 0: # / is by default of type 1
+		itemtype = '1'
+		path = itemtype_path
+	elif itemtype_path in config.no_itemtype_whitelist: # Have a whitelist for itemtypeless files
+		itemtype = None
+		path = itemtype_path
+	else: # Extract the itemtype
+		itemtype = itemtype_path[0]
+		path = itemtype_path[1:]
 
-	return selector, path
+	return itemtype, path
 
 class PathError(OneArgumentException):
 	text = 'Error with request path: %s'
@@ -314,8 +314,8 @@ def get_request(sockreader, *, config):
 		# Found the end of the requested path
 		path_end = index
 
-		selector_path = urllib.parse.unquote(request[path_start:path_end].decode('utf-8'))
-		selector, path = extract_selector_path(selector_path, config = config)
+		itemtype_path = urllib.parse.unquote(request[path_start:path_end].decode('utf-8'))
+		itemtype, path = extract_itemtype_path(itemtype_path, config = config)
 
 		# Try to extract user agent
 		useragent = None
@@ -328,7 +328,7 @@ def get_request(sockreader, *, config):
 					useragent = line[len(ua_string):].decode('latin-1')
 				useragent = useragent.strip()
 
-		rest = (selector, just_headers, useragent)
+		rest = (itemtype, just_headers, useragent)
 
 	elif protocol == Protocol.gopher:
 		rest = ()
@@ -674,7 +674,7 @@ class Serve(threading.Thread):
 
 		just_headers = False
 		if protocol == Protocol.http:
-			selector, just_headers, useragent = rest
+			itemtype, just_headers, useragent = rest
 
 		try:
 			if is_hurl_path(path_raw):
