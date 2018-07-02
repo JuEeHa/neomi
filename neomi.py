@@ -685,7 +685,7 @@ class Serve(threading.Thread):
 			if protocol == Protocol.http and itemtype is not None and itemtype not in self.config.recognised_itemtypes:
 				# If we don't recognize the requested itemtype, signal that it was a bad request
 				log('%s [%s] requested path %s with bad itemtype %s' % (self.address, protocol.name, path_raw, itemtype))
-				reader = StringReader('%s not recognized as an item type\n\nRecognized ones are %s\n' % (itemtype, ', '.join(self.config.recognised_itemtypes)))
+				reader = StringReader('%s not recognized as an item type\n\nRecognized ones are %s\n\nThe correct URL syntax is http://server:port/0/textfile\n' % (itemtype, ', '.join(self.config.recognised_itemtypes)))
 				send_header(self.sock, protocol, Status.badrequest, 'text/plain', config = self.config)
 				send_file(self.sock, reader, protocol, 'text/plain', config = self.config)
 
