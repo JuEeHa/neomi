@@ -706,7 +706,7 @@ class Serve(threading.Thread):
 					file = get_file(full_path, config = self.config)
 
 				except FileNotFoundError:
-					log('%s [%s]: Requested path not found: %s' % (self.address, protocol.name, path_raw))
+					log('%s [%s] requested path not found %s' % (self.address, protocol.name, path_raw))
 					reader = StringReader('%s not found\n\nMake sure you included the item type in the URL\n' % path_raw)
 					send_header(self.sock, protocol, Status.notfound, 'text/plain', config = self.config)
 					if not just_headers:
