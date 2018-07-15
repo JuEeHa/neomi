@@ -23,7 +23,7 @@ default_config.max_threads = 8192
 default_config.port = 7070
 default_config.recognised_itemtypes = ['0', '1', '5', '9', 'g', 'h', 'I', 's']
 default_config.request_max_size = 8192
-default_config.socket_timeout = 1
+default_config.socket_timeout = 20
 default_config.no_itemtype_whitelist = {'robots.txt', 'favicon.ico'}
 default_config.hurl_redirect_page = """<!DOCTYPE html>
 <html>
