@@ -30,6 +30,7 @@ default_config.hurl_redirect_page = """<!DOCTYPE html>
 	<head>
 		<meta http-equiv="refresh" content="2; url=__raw_url__"/>
 		<title>Redirecting to __escaped_url__</title>
+		<style>body { max-width: 70ch; margin: auto; }</style>
 	<head>
 	<body>
 		<p>Your gopher client doesn't support the hURL specification. If you are not redirected after 2s, click the link.</p>
@@ -569,7 +570,7 @@ def send_gophermap(sock, reader, protocol, *, config):
 
 	elif protocol == Protocol.http:
 		# Send header of the HTML file
-		sock.sendall(b'<!DOCTYPE html>\n<head><title>Gophermap</title></head><body><p>\n')
+		sock.sendall(b'<!DOCTYPE html>\n<head><title>Gophermap</title><style>body { max-width: 70ch; margin: auto; }</style></head><body><p>\n')
 
 		lines = []
 		line = bytearray()
